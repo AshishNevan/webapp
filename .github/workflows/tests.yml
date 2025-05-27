@@ -8,6 +8,8 @@ jobs:
   pytest:
     name: python
     runs-on: ubuntu-latest
+    env:
+      "ENV": "example"
 
     steps:
       - uses: actions/checkout@v4

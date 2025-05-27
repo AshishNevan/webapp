@@ -24,7 +24,8 @@ from src.models.user import User
 router = APIRouter()
 security = HTTPBasic()
 
-load_dotenv('prod.env')
+
+load_dotenv(f"{os.getenv('ENV')}.env")
 
 if not os.getenv("CONN_STRING"):
     raise ValueError("CONN_STRING environment variable is not set. Please set it in the .env file.")
