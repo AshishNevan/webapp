@@ -1,32 +1,20 @@
-from sqlmodel import SQLModel, create_engine, Session, select, text
+from sqlmodel import SQLModel, Session, select, text
 
 import logging
 from datetime import datetime, timezone
 
-from src.models.User import User
+from src.models.user import User
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-CONN_STRING = "postgresql://ashishnevan:postgresql@localhost:5432/mydb"
-
-
-def connect():
-    """
-    Connect to the database.
-    """
-    # Create a new SQLAlchemy engine instance
-    engine = create_engine(CONN_STRING)
-    return engine
-
-
-def test_connection(engine=connect()) -> bool:
+def check_connection(session: Session) -> bool:
     """
     Test the database connection.
     """
     res = False
-    with Session(engine) as session:
+    with session:
         try:
             # Execute a simple query to test the connection
             result = session.exec(text("SELECT 1"))
@@ -40,27 +28,29 @@ def test_connection(engine=connect()) -> bool:
     return res
 
 
-def bootstrap() -> bool:
+def bootstrap(session: Session) -> bool:
     """
     Bootstrap the database.
     """
     # Create a new SQLAlchemy engine instance
-    res = _create_tables(connect())
-    if res:
-        logger.info("Database bootstrapped successfully.")
-    else:
-        logger.error("Failed to bootstrap the database.")
+    res = False
+    try:
+        with session:
+            SQLModel.metadata.create_all(bind=session.bind)
+            logger.info("Database bootstrapped successfully.")
+            res = True
+    except Exception as e:
+        logger.error(f"Failed to bootstrap the database.: {e}")
     return res
 
 
-def create_user(new_user: User) -> bool:
+def create_user(new_user: User, session: Session) -> bool:
     """
     Create a new user in the database.
     """
-    engine = connect()
     res = False
     try:
-        with Session(engine) as session:
+        with session:
             session.add(new_user)
             session.commit()
         res = True
@@ -70,13 +60,12 @@ def create_user(new_user: User) -> bool:
     return res
 
 
-def get_user_from_email(email: str) -> User | None:
+def get_user_from_email(email: str, session: Session) -> User | None:
     """
     Get a user from the database by email.
     """
-    engine = connect()
     res = None
-    with Session(engine) as session:
+    with session:
         try:
             # Query the user by email
             user = session.exec(select(User).where(User.email == email)).first()
@@ -90,38 +79,26 @@ def get_user_from_email(email: str) -> User | None:
     return res
 
 
-def update_user_with_id(user_id: int, user: User) -> bool:
+def update_user_with_id(user_id: int, user: User , session: Session) -> User | None:
     """
     Update a user in the database by ID.
     """
-    engine = connect()
-    res = False
-    with Session(engine) as session:
+    res = None
+    with session:
         try:
-            existing_user = session.exec(select(User).where(User.id == user_id)).first()
+            existing_user = session.get(User, user_id)
             if existing_user is not None:
-                existing_user.first_name = user.first_name
-                existing_user.last_name = user.last_name
-                existing_user.password = user.password
+                fields_to_update = ['first_name', 'last_name', 'password']
+                for field in fields_to_update:
+                    new_value = getattr(user, field, getattr(existing_user, field))
+                    setattr(existing_user, field, new_value)
                 existing_user.account_updated = datetime.now(timezone.utc)
                 session.commit()
-                res = True
+                session.refresh(existing_user)
+                res = existing_user
                 logger.info(f"User updated successfully: {existing_user}")
             else:
                 logger.info("User not found.")
         except Exception as e:
             logger.error(f"Error updating user: {e}")
-    return res
-
-
-def _create_tables(conn):
-    """
-    Create tables in the database.
-    """
-    res = False
-    try:
-        SQLModel.metadata.create_all(bind=conn)
-        res = True
-    except Exception as e:
-        logger.error(f"Error creating tables: {e}")
     return res
